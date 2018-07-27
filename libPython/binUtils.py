@@ -79,6 +79,7 @@ def createBins( bining, cut ):
 
             binName = binName.replace('-','m')
             binName = binName.replace('.','p')
+            binName = binName.replace('/','o')
 
         listOfBins.append({'cut' : binCut, 'title': binTitle, 'name' : binName, 'vars' : binVars })
         ibin = ibin + 1

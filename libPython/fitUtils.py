@@ -1,10 +1,12 @@
 import ROOT as rt
 rt.gROOT.LoadMacro('./libCpp/histFitter.C+')
+rt.gROOT.LoadMacro('./libCpp/FuncFitter.C+')
 rt.gROOT.LoadMacro('./libCpp/RooCBExGaussShape.cc+')
 rt.gROOT.LoadMacro('./libCpp/RooCMSShape.cc+')
 rt.gROOT.SetBatch(1)
 
 from ROOT import tnpFitter
+from ROOT import FuncFitter
 
 import re
 import math
@@ -227,6 +229,36 @@ def histFitterAltBkg( sample, tnpBin, tnpWorkspaceParam ):
     fitter.setZLineShapes(histZLineShapeP,histZLineShapeF)
     fileTruth.Close()
 
+    ### set workspace
+    workspace = rt.vector("string")()
+    for iw in tnpWorkspace:
+        workspace.push_back(iw)
+    fitter.setWorkspace( workspace )
+
+    title = tnpBin['title'].replace(';',' - ')
+    title = title.replace('probe_sc_eta','#eta_{SC}')
+    title = title.replace('probe_Ele_pt','p_{T}')
+    fitter.fits(sample.mcTruth,title)
+    rootfile.Close()
+    
+#############################################################
+########## Function fitter
+#############################################################
+def funcFitter( sample, fitname, tnpBin, tnpWorkspaceParam ):
+    tnpWorkspace = []
+    tnpWorkspace.extend(tnpWorkspaceParam)
+    
+    ## init fitter
+    infile = rt.TFile( sample.histFile, "read")
+    hP = infile.Get('%s_Pass' % tnpBin['name'] )
+    hF = infile.Get('%s_Fail' % tnpBin['name'] )
+    fitter = FuncFitter( hP, hF, tnpBin['name'] )
+    infile.Close()
+
+    ## setup
+    rootfile = rt.TFile(fitname,'update')
+    fitter.setOutputFile( rootfile )
+    
     ### set workspace
     workspace = rt.vector("string")()
     for iw in tnpWorkspace:

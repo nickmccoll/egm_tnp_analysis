@@ -9,7 +9,7 @@ def removeNegativeBins(h):
             h.SetBinContent(i, 0)
 
 
-def makePassFailHistograms( sample, flag, bindef, var ):
+def makePassFailHistograms( sample, flag, bindef, var, doMCTrue ):
     ## open rootfile
     tree = rt.TChain(sample.tree)
     for p in sample.path:
@@ -31,7 +31,7 @@ def makePassFailHistograms( sample, flag, bindef, var ):
         hFail[ib].Sumw2()
     
         cuts = bindef['bins'][ib]['cut']
-        if sample.mcTruth :
+        if sample.mcTruth and doMCTrue is True :
             cuts = '%s && mcTrue==1' % cuts
         if not sample.cut is None :
             cuts = '%s && %s' % (cuts,sample.cut)

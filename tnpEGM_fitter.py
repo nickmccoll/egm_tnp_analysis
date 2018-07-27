@@ -5,7 +5,8 @@ import os
 import sys
 import pickle
 import shutil
-
+import ROOT
+ROOT.gSystem.Load("libHiggsAnalysisCombinedLimit")
 
 parser = argparse.ArgumentParser(description='tnp EGM fitter')
 parser.add_argument('--checkBins'  , action='store_true'  , help = 'check  bining definition')
@@ -20,8 +21,9 @@ parser.add_argument('--doPlot'     , action='store_true'  , help = 'plotting')
 parser.add_argument('--sumUp'      , action='store_true'  , help = 'sum up efficiencies')
 parser.add_argument('--iBin'       , dest = 'binNumber'   , type = int,  default=-1, help='bin number (to refit individual bin)')
 parser.add_argument('--flag'       , default = None       , help ='WP to test')
+parser.add_argument('--funcFit'    , action='store_true'  , help = 'Use function fitting instead of histogram conv.')
+parser.add_argument('--applyMCTrue', default = True       , help = 'Apply MC truth constriant')
 parser.add_argument('settings'     , default = None       , help = 'setting file [mandatory]')
-
 
 args = parser.parse_args()
 
@@ -98,7 +100,7 @@ if args.createHists:
             var = { 'name' : 'pair_mass', 'nbins' : 80, 'min' : 50, 'max': 130 }
             if sample.mcTruth:
                 var = { 'name' : 'pair_mass', 'nbins' : 80, 'min' : 50, 'max': 130 }
-            tnpRoot.makePassFailHistograms( sample, tnpConf.flags[args.flag], tnpBins, var )
+            tnpRoot.makePassFailHistograms( sample, tnpConf.flags[args.flag], tnpBins, var, args.applyMCTrue )
 
     sys.exit(0)
 
@@ -129,8 +131,24 @@ for s in tnpConf.samplesDef.keys():
 ### change the sample to fit is mc fit
 if args.mcSig :
     sampleToFit = tnpConf.samplesDef['mcNom']
+    
+if  args.doFit and args.funcFit:
+    for s in tnpConf.samplesDef.keys():
+        sample =  tnpConf.samplesDef[s]
+        if sample is None: continue
+        print 'Fitting: ' + sample.name
+        for ib in range(len(tnpBins['bins'])):
+            if (args.binNumber >= 0 and ib == args.binNumber) or args.binNumber < 0:
+                if args.altSig:                 
+                    tnpRoot.funcFitter(  sample,sample.altSigFit, tnpBins['bins'][ib], tnpConf.tnpParAltSigFit )
+                elif args.altBkg:
+                    tnpRoot.funcFitter(  sample,sample.altBkgFit, tnpBins['bins'][ib], tnpConf.tnpParAltBkgFit )
+                else:
+                    tnpRoot.funcFitter( sample,sample.nominalFit, tnpBins['bins'][ib], tnpConf.tnpParNomFit )
 
-if  args.doFit:
+    args.doPlot = True
+
+elif args.doFit:
     sampleToFit.dump()
     for ib in range(len(tnpBins['bins'])):
         if (args.binNumber >= 0 and ib == args.binNumber) or args.binNumber < 0:
@@ -146,7 +164,31 @@ if  args.doFit:
 ####################################################################
 ##### dumping plots
 ####################################################################
-if  args.doPlot:
+if  args.doPlot and args.funcFit:
+    for s in tnpConf.samplesDef.keys():
+        sample =  tnpConf.samplesDef[s]
+        if sample is None: continue
+        fileName = sample.nominalFit    
+        fitType  = 'nominalFit'
+        if args.altSig : 
+            fileName = sample.altSigFit
+            fitType  = 'altSigFit'
+        if args.altBkg : 
+            fileName = sample.altBkgFit
+            fitType  = 'altBkgFit'
+            
+        plottingDir = '%s/plots/%s/%s' % (outputDirectory,sample.name,fitType)
+        if not os.path.exists( plottingDir ):
+            os.makedirs( plottingDir )
+        shutil.copy('etc/inputs/index.php.listPlots','%s/index.php' % plottingDir)
+    
+        for ib in range(len(tnpBins['bins'])):
+            if (args.binNumber >= 0 and ib == args.binNumber) or args.binNumber < 0:
+                tnpRoot.histPlotter( fileName, tnpBins['bins'][ib], plottingDir )
+    
+        print ' ===> Plots saved in <======='
+
+elif  args.doPlot:
     fileName = sampleToFit.nominalFit
     fitType  = 'nominalFit'
     if args.altSig : 
@@ -172,7 +214,41 @@ if  args.doPlot:
 ####################################################################
 ##### dumping egamma txt file 
 ####################################################################
-if args.sumUp:
+if args.sumUp and args.funcFit:
+    ROOT.gROOT.LoadMacro('./libCpp/SFPlotter.C+')
+    ROOT.gROOT.SetBatch(1)
+    from ROOT import SFPlotter    
+    
+    binxvals = ROOT.vector("double")()
+    binyvals = ROOT.vector("double")()    
+    varx = tnpConf.biningDef[0]['var']
+    vary = tnpConf.biningDef[1]['var']    
+    for ib in range(len(tnpConf.biningDef[0]['bins'])):
+        binxvals.push_back(tnpConf.biningDef[0]['bins'][ib])
+    for ib in range(len(tnpConf.biningDef[1]['bins'])):
+        binyvals.push_back(tnpConf.biningDef[1]['bins'][ib])
+    
+    plotter = SFPlotter(varx,binxvals,vary,binyvals)
+            
+    for ib in range(len(tnpBins['bins'])):
+        v1Range = tnpBins['bins'][ib]['title'].split(';')[1].split('<')
+        v2Range = tnpBins['bins'][ib]['title'].split(';')[2].split('<')
+        xv = (float(v1Range[0])+float(v1Range[2]))/2.0 
+        yv = (float(v2Range[0])+float(v2Range[2]))/2.0
+        plotter.addBin(tnpBins['bins'][ib]['name'],xv,yv) 
+                
+         
+    plotter.addNominal(tnpConf.samplesDef['data' ].nominalFit,tnpConf.samplesDef['mcNom' ].nominalFit)
+    plotter.addCorrSyst('altSig',tnpConf.samplesDef['data' ].altSigFit,tnpConf.samplesDef['mcNom' ].altSigFit)
+    plotter.addCorrSyst('altBkg',tnpConf.samplesDef['data' ].altBkgFit,tnpConf.samplesDef['mcNom' ].altBkgFit)
+    if not tnpConf.samplesDef['mcAlt' ] is None:        
+        plotter.addMCOnlySyst('mcAlt',tnpConf.samplesDef['mcAlt' ].nominalFit)
+    if not tnpConf.samplesDef['tagSel' ] is None:
+        plotter.addMCOnlySyst('tagSel',tnpConf.samplesDef['tagSel' ].nominalFit)
+    plotter.process()
+    plotter.makeOutput('%s/egammaEffi.txt' % outputDirectory )
+
+elif args.sumUp:
     sampleToFit.dump()
     info = {
         'data'        : sampleToFit.histFile,
@@ -184,7 +260,7 @@ if args.sumUp:
         'tagSel'      : None
         }
 
-    if not tnpConf.samplesDef['mcAlt' ] is None:
+    if not tnpConf.samplesDef['mcAlt' ] is None:        
         info['mcAlt'    ] = tnpConf.samplesDef['mcAlt' ].histFile
     if not tnpConf.samplesDef['tagSel'] is None:
         info['tagSel'   ] = tnpConf.samplesDef['tagSel'].histFile
